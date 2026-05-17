@@ -51,8 +51,9 @@ function App() {
   }
 
   useEffect(() => {
-    loadTasks();
-  }, []);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  loadTasks();
+}, []);
 
   return (
     <main className="container">
