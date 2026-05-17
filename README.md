@@ -1,295 +1,181 @@
-# Docker Task Manager
+# Task Manager CI/CD
 
-## Was ich gemacht habe
+## Aufgabe C2: CI/CD mit GitHub Actions
 
-Für dieses Projekt habe ich eine kleine Task-Manager-Applikation mit Docker Compose gemacht.
+Für diese Aufgabe habe ich mein Projekt aus C1 als Basis benutzt.  
+Das Projekt besteht aus einem Backend, einem Frontend und einer PostgreSQL-Datenbank mit Docker Compose.
 
-Mit der Applikation kann der Benutzer:
+In C2 habe ich eine GitHub Actions Pipeline erstellt. Die Pipeline startet automatisch, wenn Code auf den `main` Branch gepusht wird.
 
-- alle Tasks sehen
-- einen neuen Task hinzufügen
-- einen Task als erledigt markieren
-- einen Task löschen
-
-Das Projekt hat drei Haupt-Services:
-
-- Frontend
-- Backend
-- Datenbank
-
-Das Ziel war, eine kleine Applikation zu machen, bei der die Services wirklich zusammenarbeiten und nicht nur getrennt laufen.
-
-## Warum ich dieses Projekt gewählt habe
-
-Ich habe einen Task Manager gewählt, weil er einfach ist, aber trotzdem die wichtigen Teile einer Multi-Service-Applikation zeigt.
-
-Das Frontend sendet Requests an das Backend.  
-Das Backend sendet SQL-Abfragen an die Datenbank.  
-Die Datenbank speichert die Tasks.
-
-So hat jeder Service einen echten Zweck.
-
-## Architektur
+Die Workflow-Datei befindet sich hier:
 
 ```text
-+----------------+        HTTP        +----------------+        SQL        +----------------+
-| Frontend       | -----------------> | Backend        | ---------------> | PostgreSQL     |
-| React + Nginx  |                    | Node + Express |                  | Datenbank      |
-+----------------+                    +----------------+                  +----------------+
+.github/workflows/ci-cd.yml
 ```
-## Services
-### Frontend
 
-Das Frontend wurde mit React und Vite gemacht.
+## Pipeline Übersicht
 
-Es ist der Teil, den der Benutzer im Browser sieht.
-Der Benutzer kann dort Tasks hinzufügen, erledigen und löschen.
+Die Pipeline hat diese Schritte:
 
-In Docker wird das Frontend mit Nginx ausgeliefert.
+```text
+Push auf main
+   |
+   v
+Repository auschecken
+   |
+   v
+Backend Dependencies installieren
+   |
+   v
+Backend Tests ausführen
+   |
+   v
+Frontend Dependencies installieren
+   |
+   v
+Frontend Tests ausführen
+   |
+   v
+Frontend Lint ausführen
+   |
+   v
+Backend Docker Image bauen und pushen
+   |
+   v
+Frontend Docker Image bauen und pushen
+```
 
-Das Frontend ist hier erreichbar:
+Wenn ein Schritt fehlschlägt, stoppt die Pipeline. Dann werden die Docker Images nicht gepusht.
 
-http://localhost:8080
+## Build
 
-### Backend
+Für das Backend wird ein Docker Image gebaut und für das Frontend wird auch ein Docker Image gebaut.
 
-Das Backend wurde mit Node.js und Express gemacht.
+### Backend Image
 
-Es stellt die API für das Frontend bereit.
-Es verbindet sich auch mit der PostgreSQL-Datenbank.
+```text
+ghcr.io/oguzhan-saydam/task-manager-backend
+```
 
-Das Backend hat diese Endpunkte:
+### Frontend Image
 
-GET    /health
-GET    /tasks
-POST   /tasks
-PUT    /tasks/:id
-DELETE /tasks/:id
+```text
+ghcr.io/oguzhan-saydam/task-manager-frontend
+```
 
-Das Backend ist hier erreichbar:
+Die Images werden aus diesen Dockerfiles gebaut:
 
-http://localhost:3001
+```text
+backend/Dockerfile
+frontend/Dockerfile
+```
 
-Der Healthcheck kann hier getestet werden:
+## Test
 
-http://localhost:3001/health
+Im Backend wird dieser Befehl ausgeführt:
 
+```bash
+npm test --if-present
+```
 
-### Datenbank
+Im Frontend werden diese Befehle ausgeführt:
 
-Die Datenbank ist PostgreSQL.
+```bash
+npm test --if-present
+npm run lint --if-present
+```
 
-Sie speichert die Tasks.
-Das Backend erstellt die Tabelle tasks automatisch, wenn es startet.
+`--if-present` bedeutet, dass der Befehl nur ausgeführt wird, wenn er im `package.json` vorhanden ist.
 
-Die Task-Tabelle hat diese Felder:
+## Push / Registry
 
-id
-title
-completed
-created_at
+Als Registry benutze ich GitHub Container Registry, also GHCR.
 
-## Docker Compose
+Ich habe GHCR gewählt, weil es direkt zu GitHub gehört und gut mit GitHub Actions funktioniert. Für dieses Projekt brauche ich keinen extra Docker Hub Account.
 
-Die Applikation wird mit Docker Compose gestartet.
+Die Images werden nach einem erfolgreichen Build in GHCR veröffentlicht.
 
-Es gibt drei Services in docker-compose.yml:
+## Tagging Strategie
 
-database
-backend
-frontend
+Jedes Image bekommt mindestens zwei Tags:
 
-Die Datenbank benutzt das offizielle PostgreSQL-Image.
-Das Backend benutzt ein eigenes Dockerfile.
-Das Frontend benutzt auch ein eigenes Dockerfile mit einem Multi-Stage-Build.
-
-## Multi-Stage-Build
-
-Das Frontend-Dockerfile benutzt einen Multi-Stage-Build.
-
-Zuerst wird die React-App mit Node.js gebaut.
-Danach werden die fertigen Dateien in einen Nginx-Container kopiert.
-
-So ist der fertige Frontend-Container kleiner und sauberer.
-
-## Umgebungsvariablen
-
-Das Projekt benutzt Umgebungsvariablen.
-
-Es gibt eine .env.example Datei im Repository.
+```text
+latest
+Git Commit SHA
+```
 
 Beispiel:
 
-POSTGRES_USER=appuser
-POSTGRES_PASSWORD=apppassword
-POSTGRES_DB=tasksdb
-DATABASE_URL=postgres://appuser:apppassword@database:5432/tasksdb
-BACKEND_PORT=3001
+```text
+ghcr.io/oguzhan-saydam/task-manager-backend:latest
+ghcr.io/oguzhan-saydam/task-manager-backend:<commit-sha>
+```
 
-Die echte .env Datei wird nicht zu Git hochgeladen, weil sie in .gitignore eingetragen ist.
+`latest` ist einfach lesbar.  
+Der Commit SHA ist eindeutig und nachvollziehbar. Damit kann ich später sehen, aus welchem Commit das Image gebaut wurde.
 
-## Persistente Daten
+## Trigger
 
-Die PostgreSQL-Datenbank benutzt ein named volume:
+Die Pipeline startet automatisch bei jedem Push auf den `main` Branch:
 
-postgres_data
+```yaml
+on:
+  push:
+    branches:
+      - main
+```
 
-Das bedeutet, dass die Tasks nicht verloren gehen, wenn die Container neu gestartet werden.
+Die Pipeline kann auch manuell gestartet werden:
 
-Zum Beispiel nach diesem Befehl:
+```yaml
+workflow_dispatch:
+```
 
-docker compose down
-docker compose up --build
+Das ist praktisch zum Testen.
 
-sind die gespeicherten Tasks immer noch da.
+## Secrets
 
-## Healthcheck
+Es werden keine Secrets direkt im Repository gespeichert.
 
-Der Datenbank-Service hat einen Healthcheck.
+Für GHCR wird das eingebaute GitHub Secret benutzt:
 
-Er benutzt pg_isready, um zu prüfen, ob PostgreSQL bereit ist.
+```text
+GITHUB_TOKEN
+```
 
-Das Backend wartet, bis die Datenbank healthy ist, bevor es startet.
+Dieses Token wird von GitHub automatisch bereitgestellt. Es wird nur während der Pipeline benutzt.
 
-Das wird so gemacht:
+Die `.env` Datei wird nicht ins Repository gepusht. Im Repository gibt es nur eine `.env.example` Datei mit Beispielwerten.
 
-depends_on:
-  database:
-    condition: service_healthy
+## Caching
 
-Das hilft, Fehler beim Start zu vermeiden.
+Für Docker wird der GitHub Actions Cache benutzt:
 
-## Netzwerk
+```yaml
+cache-from: type=gha
+cache-to: type=gha,mode=max
+```
 
-Die Services benutzen ein eigenes Docker-Netzwerk:
+Dadurch kann Docker alte Layers wiederverwenden. Wenn sich nicht viel am Code ändert, sollte der nächste Build schneller sein als der erste Build.
 
-app_network
+## Wichtige Entscheidungen
 
-Dadurch können die Services innerhalb von Docker miteinander kommunizieren.
+Ich habe zwei Images gebaut, weil mein Projekt aus Backend und Frontend besteht. So können beide Teile getrennt versioniert und veröffentlicht werden.
 
-Zum Beispiel kann das Backend die Datenbank mit dem Service-Namen erreichen:
+Ich habe GHCR als Registry gewählt, weil es einfach mit GitHub Actions funktioniert und keine extra Login-Daten im Repository benötigt.
 
-database
-
-## Restart Policy
-
-Alle Services benutzen:
-
-restart: unless-stopped
-
-Das bedeutet, dass Docker versucht, einen Service neu zu starten, wenn er abstürzt.
-
-Das macht die Applikation stabiler.
-
-## Logs
-
-Das Backend schreibt strukturierte Logs nach stdout.
-
-Beispiel-Log:
-
-{
-  "timestamp": "2026-05-17T14:05:52.802Z",
-  "level": "info",
-  "event": "server_started",
-  "message": "Backend running on port 3000"
-}
-
-Die Logs können mit diesem Befehl angeschaut werden:
-
-docker compose logs backend
-
-## Setup-Anleitung
-
-Zuerst die Beispiel-Umgebungsdatei kopieren:
-
-Copy-Item .env.example .env
-
-Dann das Projekt starten:
-
-docker compose up --build
-
-Das Frontend im Browser öffnen:
-
-http://localhost:8080
-
-Den Backend-Healthcheck testen:
-
-http://localhost:3001/health
-
-## Wie man die Applikation testet
-
-Das Frontend öffnen und diese Aktionen testen:
-
-Einen neuen Task hinzufügen
-Einen Task als erledigt markieren
-Einen Task löschen
-Die Container neu starten
-Prüfen, ob die Task-Daten immer noch gespeichert sind
-
-Das Backend kann auch direkt getestet werden:
-
-Invoke-RestMethod -Uri "http://localhost:3001/tasks" -Method GET
-
-Einen Task über PowerShell hinzufügen:
-
-Invoke-RestMethod -Uri "http://localhost:3001/tasks" -Method POST -ContentType "application/json" -Body '{"title":"Test task"}'
-
-## Wichtige Code- und Config-Teile
-### Datenbank-Healthcheck
-
-healthcheck:
-  test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-  interval: 5s
-  timeout: 5s
-  retries: 5
-
-### Named Volume
-volumes:
-  postgres_data:
-
-### Eigenes Netzwerk
-networks:
-  app_network:
-
-### Restart Policy
-restart: unless-stopped
-
-## Technologie-Entscheidungen
-
-Ich habe React/Vite für das Frontend benutzt, weil man damit einfach ein kleines Frontend machen kann.
-
-Ich habe Node.js und Express für das Backend benutzt, weil es einfach ist und gut für REST APIs passt.
-
-Ich habe PostgreSQL benutzt, weil es eine bekannte relationale Datenbank ist und gut mit Docker funktioniert.
-
-Ich habe Docker Compose benutzt, weil das Projekt mehr als einen Service hat und diese Services zusammen laufen müssen.
-
-## AI-Nutzung
-
-Ich habe AI-Tools während diesem Projekt benutzt.
-
-AI hat mir geholfen bei:
-
-der Planung der Struktur
-dem Schreiben von Beispielcode
-dem Debugging von Docker- und PowerShell-Problemen
-der Verbesserung der README-Datei
-
-Ich habe den Code geprüft und angepasst, wo es nötig war.
-Ich verstehe den Grundzweck von Frontend, Backend, Datenbank, Docker Compose Datei, Volume, Netzwerk und Healthcheck.
+Ich benutze `latest` und den Commit SHA als Tags. `latest` ist einfach zu lesen und der Commit SHA ist eindeutig.
 
 ## Reflexion
 
-Ich habe gelernt, wie mehrere Services mit Docker Compose zusammenarbeiten können.
+Ich habe gelernt, wie GitHub Actions nach einem Push automatisch eine Pipeline startet.  
+Am Anfang ist die Pipeline wegen einem Lint-Fehler fehlgeschlagen. Das war hilfreich, weil man sehen konnte, dass die Pipeline Fehler erkennt und dann stoppt.
 
-Vor diesem Projekt habe ich meistens nur an einen einzelnen Container gedacht.
-Jetzt verstehe ich besser, wie ein Frontend, Backend und eine Datenbank miteinander kommunizieren können.
+Danach gab es noch ein Problem mit dem Image-Namen, weil Docker Registry Namen klein geschrieben sein müssen. Deshalb wird der GitHub Benutzername in der Pipeline in Kleinbuchstaben umgewandelt.
 
-Ich habe auch gelernt, dass die Start-Reihenfolge wichtig ist.
-Das Backend sollte nicht starten, bevor die Datenbank bereit ist.
+Rückblickend würde ich früher darauf achten, dass Docker Image Namen immer klein geschrieben sind. Ausserdem würde ich von Anfang an einfache Tests im Backend und Frontend einbauen, damit die Test-Stage noch sinnvoller ist.
 
-Ein anderer wichtiger Punkt war Persistenz.
-Ohne Docker Volume würden die Daten der Datenbank verloren gehen.
+## KI-Deklaration
 
-Wenn ich mehr Zeit hätte, würde ich das Design vom Frontend verbessern.
-Ich würde auch bessere Fehlermeldungen und vielleicht ein Benutzer-Login hinzufügen.
+Ich habe KI als Hilfe benutzt, um die Aufgabenstellung besser zu verstehen, die GitHub Actions Pipeline zu planen und Fehler in der Pipeline zu erklären.  
+Den Code und die Konfiguration habe ich geprüft und angepasst.
